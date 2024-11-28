@@ -26,9 +26,9 @@ namespace URPGlitch.Runtime.DigitalGlitch
         readonly Texture2D _noiseTexture;
         readonly DigitalGlitchVolume _volume;
 
-        RenderTargetHandle _mainFrame;
-        RenderTargetHandle _trashFrame1;
-        RenderTargetHandle _trashFrame2;
+        RTHandle _mainFrame;
+        RTHandle _trashFrame1;
+        RTHandle _trashFrame2;
 
         bool isActive =>
             _glitchMaterial != null &&
@@ -52,9 +52,9 @@ namespace URPGlitch.Runtime.DigitalGlitch
             var volumeStack = VolumeManager.instance.stack;
             _volume = volumeStack.GetComponent<DigitalGlitchVolume>();
 
-            _mainFrame.Init("_MainFrame");
-            _trashFrame1.Init("_TrashFrame1");
-            _trashFrame2.Init("_TrashFrame2");
+            _mainFrame = RTHandles.Alloc("_MainFrame", name: "_MainFrame");
+            _trashFrame1 = RTHandles.Alloc("_TrashFrame1", name: "_TrashFrame1");
+            _trashFrame2 = RTHandles.Alloc("_TrashFrame2", name: "_TrashFrame2");
             UpdateNoiseTexture();
         }
 
@@ -97,31 +97,40 @@ namespace URPGlitch.Runtime.DigitalGlitch
             cmd.Clear();
             using (new ProfilingScope(cmd, _profilingSampler))
             {
-                var source = renderingData.cameraData.renderer.cameraColorTarget;
+                var source = renderingData.cameraData.renderer.cameraColorTargetHandle;
 
                 var cameraTargetDescriptor = renderingData.cameraData.cameraTargetDescriptor;
                 cameraTargetDescriptor.depthBufferBits = 0;
-                cmd.GetTemporaryRT(_mainFrame.id, cameraTargetDescriptor);
-                cmd.GetTemporaryRT(_trashFrame1.id, cameraTargetDescriptor);
-                cmd.GetTemporaryRT(_trashFrame2.id, cameraTargetDescriptor);
-                cmd.Blit(source, _mainFrame.Identifier());
+                cmd.GetTemporaryRT(Shader.PropertyToID(_mainFrame.name), cameraTargetDescriptor);
+                cmd.GetTemporaryRT(Shader.PropertyToID(_trashFrame1.name), cameraTargetDescriptor);
+                cmd.GetTemporaryRT(Shader.PropertyToID(_trashFrame2.name), cameraTargetDescriptor);
+
+                var destination = _mainFrame.nameID;
+                CoreUtils.SetRenderTarget(cmd, destination);
+                cmd.Blit(source, destination);
+
+
 
                 var frameCount = Time.frameCount;
-                if (frameCount % 13 == 0) cmd.Blit(source, _trashFrame1.Identifier());
-                if (frameCount % 73 == 0) cmd.Blit(source, _trashFrame2.Identifier());
+                var destinationFrame1 = _trashFrame1.nameID;
+                CoreUtils.SetRenderTarget(cmd, destinationFrame1);
+                if (frameCount % 13 == 0) cmd.Blit(source, destinationFrame1);
+                var destinationFrame2 = _trashFrame2.nameID;
+                CoreUtils.SetRenderTarget(cmd, destinationFrame2);
+                if (frameCount % 73 == 0) cmd.Blit(source, destinationFrame2);
 
                 var r = (float)_random.NextDouble();
                 var blitTrashHandle = r > 0.5f ? _trashFrame1 : _trashFrame2;
                 cmd.SetGlobalFloat(IntensityID, _volume.intensity.value);
                 cmd.SetGlobalTexture(NoiseTexID, _noiseTexture);
-                cmd.SetGlobalTexture(MainTexID, _mainFrame.Identifier());
-                cmd.SetGlobalTexture(TrashTexID, blitTrashHandle.Identifier());
+                cmd.SetGlobalTexture(MainTexID, _mainFrame.nameID);
+                cmd.SetGlobalTexture(TrashTexID, blitTrashHandle.nameID);
 
-                cmd.Blit(_mainFrame.Identifier(), source, _glitchMaterial);
+                cmd.Blit(destination, source, _glitchMaterial);
 
-                cmd.ReleaseTemporaryRT(_mainFrame.id);
-                cmd.ReleaseTemporaryRT(_trashFrame1.id);
-                cmd.ReleaseTemporaryRT(_trashFrame2.id);
+                cmd.ReleaseTemporaryRT(Shader.PropertyToID(_mainFrame.name));
+                cmd.ReleaseTemporaryRT(Shader.PropertyToID(_trashFrame1.name));
+                cmd.ReleaseTemporaryRT(Shader.PropertyToID(_trashFrame2.name));
             }
 
             context.ExecuteCommandBuffer(cmd);

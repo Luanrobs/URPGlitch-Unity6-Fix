@@ -24,7 +24,7 @@ namespace URPGlitch.Runtime.AnalogGlitch
         readonly Material _glitchMaterial;
         readonly AnalogGlitchVolume _volume;
 
-        RenderTargetHandle _mainFrame;
+        RTHandle _mainFrame;
         float _verticalJumpTime;
 
         bool isActive =>
@@ -41,7 +41,7 @@ namespace URPGlitch.Runtime.AnalogGlitch
             var volumeStack = VolumeManager.instance.stack;
             _volume = volumeStack.GetComponent<AnalogGlitchVolume>();
 
-            _mainFrame.Init("_MainFrame");
+            _mainFrame = RTHandles.Alloc("_MainFrame", name: "_MainFrame");
         }
 
         public void Dispose()
@@ -67,12 +67,14 @@ namespace URPGlitch.Runtime.AnalogGlitch
             cmd.Clear();
             using (new ProfilingScope(cmd, _profilingSampler))
             {
-                var source = renderingData.cameraData.renderer.cameraColorTarget;
+                var source = renderingData.cameraData.renderer.cameraColorTargetHandle;
 
                 var cameraTargetDescriptor = renderingData.cameraData.cameraTargetDescriptor;
                 cameraTargetDescriptor.depthBufferBits = 0;
-                cmd.GetTemporaryRT(_mainFrame.id, cameraTargetDescriptor);
-                cmd.Blit(source, _mainFrame.Identifier());
+                cmd.GetTemporaryRT(Shader.PropertyToID(_mainFrame.name), cameraTargetDescriptor);
+                var destination = _mainFrame.nameID;
+                CoreUtils.SetRenderTarget(cmd, destination);
+                cmd.Blit(source, destination);
 
                 var scanLineJitter = _volume.scanLineJitter.value;
                 var verticalJump = _volume.verticalJump.value;
@@ -92,9 +94,9 @@ namespace URPGlitch.Runtime.AnalogGlitch
                 var cd = new Vector2(colorDrift * 0.04f, Time.time * 606.11f);
                 _glitchMaterial.SetVector(ColorDriftID, cd);
 
-                cmd.SetGlobalTexture(MainTexID, _mainFrame.Identifier());
-                cmd.Blit(_mainFrame.Identifier(), source, _glitchMaterial);
-                cmd.ReleaseTemporaryRT(_mainFrame.id);
+                cmd.SetGlobalTexture(MainTexID, _mainFrame.nameID);
+                cmd.Blit(destination, source, _glitchMaterial);
+                cmd.ReleaseTemporaryRT(Shader.PropertyToID(_mainFrame.name));
             }
 
             context.ExecuteCommandBuffer(cmd);

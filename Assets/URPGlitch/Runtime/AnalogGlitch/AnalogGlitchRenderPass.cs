@@ -2,105 +2,51 @@
 //     https://github.com/keijiro/KinoGlitch.git
 //     Assets/Kino/Glitch/AnalogGlitch.cs
 
-using System;
 using UnityEngine;
 using UnityEngine.Rendering;
-using UnityEngine.Rendering.Universal;
 
 namespace URPGlitch.Runtime.AnalogGlitch
 {
-    sealed class AnalogGlitchRenderPass : ScriptableRenderPass, IDisposable
+    sealed class AnalogGlitchRenderPass : GlitchRenderPass
     {
         const string RenderPassName = "AnalogGlitch RenderPass";
 
         // Material Properties
-        static readonly int MainTexID = Shader.PropertyToID("_MainTex");
         static readonly int ScanLineJitterID = Shader.PropertyToID("_ScanLineJitter");
         static readonly int VerticalJumpID = Shader.PropertyToID("_VerticalJump");
         static readonly int HorizontalShakeID = Shader.PropertyToID("_HorizontalShake");
         static readonly int ColorDriftID = Shader.PropertyToID("_ColorDrift");
 
-        readonly ProfilingSampler _profilingSampler;
-        readonly Material _glitchMaterial;
-        readonly AnalogGlitchVolume _volume;
-
-        RTHandle _mainFrame;
         float _verticalJumpTime;
 
-        bool isActive =>
-            _glitchMaterial != null &&
-            _volume != null &&
-            _volume.IsActive;
+        static AnalogGlitchVolume Volume => VolumeManager.instance.stack.GetComponent<AnalogGlitchVolume>();
 
-        public AnalogGlitchRenderPass(Shader shader)
+        protected override bool IsVolumeActive => Volume != null && Volume.IsActive;
+
+        public AnalogGlitchRenderPass(Shader shader) : base(shader, RenderPassName)
         {
-            renderPassEvent = RenderPassEvent.AfterRenderingPostProcessing;
-            _profilingSampler = new ProfilingSampler(RenderPassName);
-            _glitchMaterial = CoreUtils.CreateEngineMaterial(shader);
-
-            var volumeStack = VolumeManager.instance.stack;
-            _volume = volumeStack.GetComponent<AnalogGlitchVolume>();
-
-            _mainFrame = RTHandles.Alloc("_MainFrame", name: "_MainFrame");
         }
 
-        public void Dispose()
+        protected override void UpdateMaterialProperties()
         {
-            CoreUtils.Destroy(_glitchMaterial);
-        }
+            var volume = Volume;
+            var scanLineJitter = volume.scanLineJitter.value;
+            var verticalJump = volume.verticalJump.value;
+            var horizontalShake = volume.horizontalShake.value;
+            var colorDrift = volume.colorDrift.value;
 
-        // Here you can implement the rendering logic.
-        // Use <c>ScriptableRenderContext</c> to issue drawing commands or execute command buffers
-        // https://docs.unity3d.com/ScriptReference/Rendering.ScriptableRenderContext.html
-        // You don't have to call ScriptableRenderContext.submit, the render pipeline will call it at specific points in the pipeline.
-        public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
-        {
-            var isPostProcessEnabled = renderingData.cameraData.postProcessEnabled;
-            var isSceneViewCamera = renderingData.cameraData.isSceneViewCamera;
-            if (!isActive || !isPostProcessEnabled || isSceneViewCamera)
-            {
-                return;
-            }
+            _verticalJumpTime += Time.deltaTime * verticalJump * 11.3f;
 
-            // TODO: Swap Bufferの検証
-            var cmd = CommandBufferPool.Get(RenderPassName);
-            cmd.Clear();
-            using (new ProfilingScope(cmd, _profilingSampler))
-            {
-                var source = renderingData.cameraData.renderer.cameraColorTargetHandle;
+            var slThresh = Mathf.Clamp01(1.0f - scanLineJitter * 1.2f);
+            var slDisp = 0.002f + Mathf.Pow(scanLineJitter, 3) * 0.05f;
+            GlitchMaterial.SetVector(ScanLineJitterID, new Vector2(slDisp, slThresh));
 
-                var cameraTargetDescriptor = renderingData.cameraData.cameraTargetDescriptor;
-                cameraTargetDescriptor.depthBufferBits = 0;
-                cmd.GetTemporaryRT(Shader.PropertyToID(_mainFrame.name), cameraTargetDescriptor);
-                var destination = _mainFrame.nameID;
-                CoreUtils.SetRenderTarget(cmd, destination);
-                cmd.Blit(source, destination);
+            var vj = new Vector2(verticalJump, _verticalJumpTime);
+            GlitchMaterial.SetVector(VerticalJumpID, vj);
+            GlitchMaterial.SetFloat(HorizontalShakeID, horizontalShake * 0.2f);
 
-                var scanLineJitter = _volume.scanLineJitter.value;
-                var verticalJump = _volume.verticalJump.value;
-                var horizontalShake = _volume.horizontalShake.value;
-                var colorDrift = _volume.colorDrift.value;
-
-                _verticalJumpTime += Time.deltaTime * verticalJump * 11.3f;
-
-                var slThresh = Mathf.Clamp01(1.0f - scanLineJitter * 1.2f);
-                var slDisp = 0.002f + Mathf.Pow(scanLineJitter, 3) * 0.05f;
-                _glitchMaterial.SetVector(ScanLineJitterID, new Vector2(slDisp, slThresh));
-
-                var vj = new Vector2(verticalJump, _verticalJumpTime);
-                _glitchMaterial.SetVector(VerticalJumpID, vj);
-                _glitchMaterial.SetFloat(HorizontalShakeID, horizontalShake * 0.2f);
-
-                var cd = new Vector2(colorDrift * 0.04f, Time.time * 606.11f);
-                _glitchMaterial.SetVector(ColorDriftID, cd);
-
-                cmd.SetGlobalTexture(MainTexID, _mainFrame.nameID);
-                cmd.Blit(destination, source, _glitchMaterial);
-                cmd.ReleaseTemporaryRT(Shader.PropertyToID(_mainFrame.name));
-            }
-
-            context.ExecuteCommandBuffer(cmd);
-            CommandBufferPool.Release(cmd);
+            var cd = new Vector2(colorDrift * 0.04f, Time.time * 606.11f);
+            GlitchMaterial.SetVector(ColorDriftID, cd);
         }
     }
 }

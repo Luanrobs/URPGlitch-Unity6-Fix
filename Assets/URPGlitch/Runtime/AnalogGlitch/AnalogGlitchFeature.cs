@@ -21,12 +21,19 @@ namespace URPGlitch.Runtime.AnalogGlitch
         // This method is called when setting up the renderer once per-camera.
         public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
         {
+            var cameraData = renderingData.cameraData;
+            if (!_scriptablePass.ShouldRender(cameraData.postProcessEnabled, cameraData.isSceneViewCamera,
+                    cameraData.resolveFinalTarget))
+            {
+                return;
+            }
+
             renderer.EnqueuePass(_scriptablePass);
         }
 
         protected override void Dispose(bool disposing)
         {
-            _scriptablePass.Dispose();
+            _scriptablePass?.Dispose();
         }
     }
 }

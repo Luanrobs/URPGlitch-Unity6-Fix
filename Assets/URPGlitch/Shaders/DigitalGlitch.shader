@@ -13,29 +13,16 @@ Shader "URPGlitch/RenderFeature//Digital"
 
         Pass
         {
+            ZTest Always
             ZWrite Off
             Cull Off
 
             HLSLPROGRAM
-            #pragma vertex Vertex
+            #pragma vertex Vert
             #pragma fragment Fragment
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-
-            struct Attributes
-            {
-                float4 positionOS : POSITION;
-                float2 uv : TEXCOORD0;
-            };
-
-            struct Varyings
-            {
-                half4 positionCS : SV_POSITION;
-                half2 uv : TEXCOORD0;
-            };
-
-            TEXTURE2D(_MainTex);
-            SAMPLER(sampler_MainTex);
+            #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
 
             TEXTURE2D(_NoiseTex);
             SAMPLER(sampler_NoiseTex);
@@ -45,17 +32,11 @@ Shader "URPGlitch/RenderFeature//Digital"
 
             float _Intensity;
 
-            Varyings Vertex(Attributes i)
-            {
-                Varyings output;
-                output.positionCS = TransformObjectToHClip(i.positionOS.xyz);
-                output.uv = i.uv;
-                return output;
-            }
-
             half4 Fragment(Varyings i) : SV_Target
             {
-                float4 glitch = SAMPLE_TEXTURE2D(_NoiseTex, sampler_NoiseTex, i.uv);
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
+
+                float4 glitch = SAMPLE_TEXTURE2D(_NoiseTex, sampler_NoiseTex, i.texcoord);
 
                 float thresh = 1.001 - _Intensity * 1.001;
                 float w_d = step(thresh, pow(abs(glitch.z), 2.5)); // displacement glitch
@@ -63,8 +44,8 @@ Shader "URPGlitch/RenderFeature//Digital"
                 float w_c = step(thresh, pow(abs(glitch.z), 3.5)); // color glitch
 
                 // Displacement.
-                float2 uv = frac(i.uv + glitch.xy * w_d);
-                float4 source = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, uv);
+                float2 uv = frac(i.texcoord + glitch.xy * w_d);
+                float4 source = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv);
                 float4 trash = SAMPLE_TEXTURE2D(_TrashTex, sampler_TrashTex, uv);
 
                 // Mix with trash frame.

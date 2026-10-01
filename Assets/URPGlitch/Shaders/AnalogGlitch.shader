@@ -13,29 +13,16 @@ Shader "URPGlitch/RenderFeature/Analog"
 
         Pass
         {
+            ZTest Always
             ZWrite Off
             Cull Off
 
             HLSLPROGRAM
-            #pragma vertex Vertex
+            #pragma vertex Vert
             #pragma fragment Fragment
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-
-            struct Attributes
-            {
-                float4 positionOS : POSITION;
-                float2 uv : TEXCOORD0;
-            };
-
-            struct Varyings
-            {
-                half4 positionCS : SV_POSITION;
-                half2 uv : TEXCOORD0;
-            };
-
-            TEXTURE2D(_MainTex);
-            SAMPLER(sampler_MainTex);
+            #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
 
             float2 _ScanLineJitter; // (displacement, threshold)
             float2 _VerticalJump; // (amount, time)
@@ -47,18 +34,12 @@ Shader "URPGlitch/RenderFeature/Analog"
                 return frac(sin(dot(float2(x, y), float2(12.9898, 78.233))) * 43758.5453);
             }
 
-            Varyings Vertex(Attributes i)
-            {
-                Varyings output;
-                output.positionCS = TransformObjectToHClip(i.positionOS.xyz);
-                output.uv = i.uv;
-                return output;
-            }
-
             half4 Fragment(Varyings i) : SV_Target
             {
-                float u = i.uv.x;
-                float v = i.uv.y;
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
+
+                float u = i.texcoord.x;
+                float v = i.texcoord.y;
 
                 // Scan line jitter
                 float jitter = nrand(v, _Time.x) * 2 - 1;
@@ -73,8 +54,8 @@ Shader "URPGlitch/RenderFeature/Analog"
                 // Color drift
                 float drift = sin(jump + _ColorDrift.y) * _ColorDrift.x;
 
-                half4 src1 = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, frac(float2(u + jitter + shake, jump)));
-                half4 src2 = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, frac(float2(u + jitter + shake + drift, jump)));
+                half4 src1 = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, frac(float2(u + jitter + shake, jump)));
+                half4 src2 = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, frac(float2(u + jitter + shake + drift, jump)));
                 return half4(src1.r, src2.g, src1.b, 1);
             }
             ENDHLSL
